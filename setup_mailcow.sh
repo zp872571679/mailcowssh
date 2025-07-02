@@ -8,7 +8,8 @@ set -e
 # 2. 安装必要的依赖软件 (sudo, vim, git)
 # 3. 安装 Docker
 # 4. 克隆 mailcow-dockerized 项目
-# 5. 生成 mailcow 配置文件
+# 5. 下载并解压额外的 API 和工具文件
+# 6. 生成 mailcow 配置文件
 
 # --- 开始执行 ---
 
@@ -25,7 +26,7 @@ echo
 
 # 检查并安装依赖软件
 echo "--- 第2步：检查并安装依赖软件 (sudo, vim, git) ---"
-packages="sudo vim git"
+packages="sudo vim git curl" # 确保 curl 也被检查和安装
 for pkg in $packages; do
     # 使用 command -v 检查命令是否存在
     if ! command -v $pkg &> /dev/null; then
@@ -52,9 +53,6 @@ if ! command -v docker &> /dev/null; then
 else
     echo "--- Docker 已安装，跳过安装步骤 ---"
 fi
-# 将当前用户添加到docker组，以便无需sudo即可运行docker命令（可选，但推荐）
-# 注意：这需要重新登录才能生效
-# usermod -aG docker $(logname)
 echo
 
 echo "--- 第4步：创建目录并克隆 mailcow-dockerized 项目 ---"
@@ -79,9 +77,54 @@ else
 fi
 echo
 
-echo "--- 第5步：生成 mailcow 配置文件 ---"
-# 进入项目目录
-cd mailcow-dockerized
+# --- 新增步骤 ---
+echo "--- 第5步：下载并解压额外的 API 和工具文件 ---"
+# 定义文件和目标目录
+TARGET_DIR="/docker/mailcow-dockerized/data/web"
+FILES_TO_DOWNLOAD=(
+    "https://github.com/zp872571679/mailcowssh/raw/refs/heads/main/mail-api.tar.gz"
+    "https://github.com/zp872571679/mailcowssh/raw/refs/heads/main/tool.tar.gz"
+)
+
+# 确保目标目录存在
+echo "确保目标目录 '$TARGET_DIR' 存在..."
+mkdir -p "$TARGET_DIR"
+
+# 循环下载文件
+for url in "${FILES_TO_DOWNLOAD[@]}"; do
+    filename=$(basename "$url")
+    filepath="$TARGET_DIR/$filename"
+    if [ ! -f "$filepath" ]; then
+        echo "文件 '$filename' 不存在，正在下载..."
+        # 使用 curl 下载文件到指定目录
+        curl -L -o "$filepath" "$url"
+        echo "下载完成: $filename"
+    else
+        echo "文件 '$filename' 已存在，跳过下载。"
+    fi
+done
+
+# 进入目标目录解压文件
+cd "$TARGET_DIR"
+echo "进入目录 $(pwd) 进行解压操作..."
+
+for url in "${FILES_TO_DOWNLOAD[@]}"; do
+    filename=$(basename "$url")
+    if [ -f "$filename" ]; then
+        echo "正在解压 '$filename'..."
+        tar -xzvf "$filename"
+        echo "解压完成，删除压缩包 '$filename'..."
+        rm "$filename"
+    else
+        echo "警告：未找到压缩包 '$filename'，无法解压。"
+    fi
+done
+echo "--- 额外文件处理完成 ---"
+echo
+
+echo "--- 第6步：生成 mailcow 配置文件 ---"
+# 返回到 mailcow 项目的根目录
+cd /docker/mailcow-dockerized
 
 # 检查配置文件生成脚本是否存在
 if [ -f "./generate_config.sh" ]; then

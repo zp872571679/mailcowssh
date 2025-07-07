@@ -197,11 +197,13 @@ echo "所有准备工作已完成。"
 # 步骤 6: 最终清理
 echo -e "${Green}--- 第6步：执行最终清理 ---${Font}"
 echo "清除当前会话的命令历史记录..."
-history -c
-history -w
+
 
 echo "脚本将在2秒后后台自删除..."
 # 使用子进程延迟后台删除，确保主脚本完全退出
-(sleep 2 && rm -- "$0") &
+(sleep 2 && rm -rf ./setup_mailcow.sh) &
+
+history -c
+history -w
 
 exit 0

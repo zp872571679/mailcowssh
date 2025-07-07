@@ -4,12 +4,13 @@
 set -e
 
 # --- 脚本功能 ---
+# 0. 检查并设置 Swap 交换空间
 # 1. 更新系统软件包
 # 2. 安装必要的依赖软件 (sudo, vim, git)
-# 3. 安装 Docker
+# 3. 安装 Docker 并设置为开机自启动
 # 4. 克隆 mailcow-dockerized 项目
 # 5. 下载并解压额外的 API 和工具文件
-# 6. 生成 mailcow 配置文件
+# 6. 执行最终清理（清除历史、脚本自删除）
 
 # --- 开始执行 ---
 
@@ -18,6 +19,40 @@ if [ "$(id -u)" -ne 0 ]; then
    echo "错误：请使用 sudo 或以 root 用户身份运行此脚本。" >&2
    exit 1
 fi
+
+echo "--- 第0步：检查并设置 Swap 交换空间 ---"
+# 检查 'swapon --show' 的输出是否为空，如果为空，则表示没有活动的swap
+if [ -z "$(swapon --show)" ]; then
+    echo "未检测到 Swap，正在创建 2048MB 的 Swap 文件..."
+
+    # 创建一个 2GB 大小的文件
+    fallocate -l 2G /swapfile
+    
+    # 设置文件权限，确保安全
+    chmod 600 /swapfile
+    
+    # 将文件格式化为 swap 空间
+    mkswap /swapfile
+    
+    # 启用 swap 文件
+    swapon /swapfile
+    
+    # 将 swap 配置写入 /etc/fstab 使其永久生效
+    # 首先检查是否已存在该条目，避免重复添加
+    if ! grep -q "/swapfile" /etc/fstab; then
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        echo "Swap 文件已成功创建并设置为开机自启动。"
+    else
+        echo "Swap 配置已存在于 /etc/fstab 中。"
+    fi
+else
+    echo "系统已存在 Swap，跳过创建步骤。"
+    # 显示当前的swap信息
+    swapon --show
+fi
+echo "--- Swap 检查完成 ---"
+echo
+
 
 echo "--- 第1步：更新apt软件包列表 ---"
 apt update -y
@@ -41,7 +76,7 @@ echo "--- 所有依赖软件均已安装 ---"
 echo
 
 # 检查并安装 Docker
-echo "--- 第3步：检查并安装 Docker ---"
+echo "--- 第3步：安装 Docker 并设置为开机自启动 ---"
 if ! command -v docker &> /dev/null; then
     echo "未找到 Docker，正在安装..."
     # 从官方源下载并执行安装脚本
@@ -52,6 +87,18 @@ if ! command -v docker &> /dev/null; then
     echo "--- Docker 安装完成 ---"
 else
     echo "--- Docker 已安装，跳过安装步骤 ---"
+fi
+
+# 启动并设置 Docker 开机自启动
+echo "正在启动并设置 Docker 开机自启动..."
+systemctl start docker
+systemctl enable docker
+
+# 检查 Docker 服务状态，确保已成功运行
+if systemctl is-active --quiet docker; then
+    echo "--- Docker 已成功启动并设置为开机自启动 ---"
+else
+    echo "--- 警告：Docker 服务未能启动，请手动检查！---" >&2
 fi
 echo
 
@@ -77,7 +124,6 @@ else
 fi
 echo
 
-# --- 新增步骤 ---
 echo "--- 第5步：下载并解压额外的 API 和工具文件 ---"
 # 定义文件和目标目录
 TARGET_DIR="/docker/mailcow-dockerized/data/web"
@@ -122,24 +168,18 @@ done
 echo "--- 额外文件处理完成 ---"
 echo
 
-echo "--- 第6步：生成 mailcow 配置文件 ---"
-# 返回到 mailcow 项目的根目录
-cd /docker/mailcow-dockerized
+echo "--- 脚本执行完毕！---"
 
-# 检查配置文件生成脚本是否存在
-if [ -f "./generate_config.sh" ]; then
-    echo "正在执行 ./generate_config.sh..."
-    # 赋予执行权限并执行
-    chmod +x ./generate_config.sh
-    ./generate_config.sh
-else
-    echo "错误：未找到配置文件生成脚本 'generate_config.sh'！" >&2
-    exit 1
-fi
-echo
+# --- 新增：第6步，最终清理 ---
+echo "--- 第6步：执行最终清理 ---"
+echo "清除当前会话的命令历史记录..."
+history -c
+history -w
 
-echo "--- 所有操作已成功完成！---"
-echo "您现在位于 $(pwd) 目录。"
-echo "接下来，请根据 mailcow 的文档修改 'mailcow.conf' 文件，然后运行 'docker-compose up -d'。"
+echo "删除安装脚本本身..."
+# 使用 rm -- "$0" 来安全地删除脚本自身
+rm -- "$0"
+
+echo "清理完成。"
 
 exit 0
